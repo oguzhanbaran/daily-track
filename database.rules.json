@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "rooms": {
+      "daily-track": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}

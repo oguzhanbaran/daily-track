@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DndContext, DragOverlay, useDraggable, useDroppable, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
+import { onValue, ref, runTransaction, set } from '@firebase/database'
 import { CircleDot, RotateCcw } from 'lucide-react'
+import { realtimeDatabase } from './firebase'
 import './App.css'
 
 type Participant = { id: string; name: string; spoken: boolean; absent: boolean; fixed: boolean }
 type SavedMeeting = { participants: Participant[]; currentSpeakerId: string | null; elapsedSeconds: number; isRunning: boolean }
 
 const storageKey = 'daily-track-meeting-v1'
+const sharedRoomPath = 'rooms/daily-track'
 const teamNames = [
   'Oğuzhan',
   'Osman',
@@ -31,6 +34,35 @@ function createTeamParticipants(savedParticipants: Participant[] = []) {
     const savedPerson = savedParticipants.find((person) => person.id === id || person.name === name)
     return { id, name, spoken: savedPerson?.spoken ?? false, absent: savedPerson?.absent ?? false, fixed: true }
   })
+}
+
+function normalizeMeeting(value: unknown): SavedMeeting | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<SavedMeeting>
+  if (!Array.isArray(raw.participants)) return null
+
+  const savedParticipants = raw.participants
+    .filter((person): person is Participant => Boolean(person) && typeof person.id === 'string' && typeof person.name === 'string')
+    .map((person) => ({
+      id: person.id,
+      name: person.name,
+      spoken: person.spoken === true,
+      absent: person.absent === true,
+      fixed: person.fixed === true,
+    }))
+  const fixedNames = new Set(teamNames)
+  const customParticipants = savedParticipants
+    .filter((person) => !fixedNames.has(person.name) && !legacySampleIds.has(person.id) && !person.id.startsWith('team-'))
+    .map((person) => ({ ...person, fixed: false }))
+  const participants = [...createTeamParticipants(savedParticipants), ...customParticipants]
+  const currentSpeakerId = participants.some((person) => person.id === raw.currentSpeakerId) ? raw.currentSpeakerId ?? null : null
+
+  return {
+    participants,
+    currentSpeakerId,
+    elapsedSeconds: typeof raw.elapsedSeconds === 'number' && Number.isFinite(raw.elapsedSeconds) ? raw.elapsedSeconds : 0,
+    isRunning: raw.isRunning === true,
+  }
 }
 
 function loadMeeting(): SavedMeeting {
@@ -89,13 +121,64 @@ function ParticipantLane({ id, title, people }: { id: 'unspoken' | 'spoken'; tit
 function App() {
   const [meeting, setMeeting] = useState(loadMeeting)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const meetingRef = useRef(meeting)
+  const sharedRoomReady = useRef(!realtimeDatabase)
+  const lastRemoteState = useRef<string | null>(null)
   const participants = meeting.participants.filter((person) => !person.absent)
   const unspokenPeople = participants.filter((person) => !person.spoken)
   const spokenPeople = participants.filter((person) => person.spoken)
   const activePerson = participants.find((person) => person.id === activeId)
 
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(meeting))
+    meetingRef.current = meeting
+  }, [meeting])
+
+  useEffect(() => {
+    if (!realtimeDatabase) return
+    const roomRef = ref(realtimeDatabase, sharedRoomPath)
+    let initializedEmptyRoom = false
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        if (!initializedEmptyRoom) {
+          initializedEmptyRoom = true
+          void runTransaction(roomRef, (current) => current ?? meetingRef.current).catch((error: unknown) => {
+            console.error('Ortak toplantı odası başlatılamadı.', error)
+          })
+        }
+        return
+      }
+
+      const sharedMeeting = normalizeMeeting(snapshot.val())
+      if (!sharedMeeting) {
+        console.error('Ortak toplantı verisi geçersiz.')
+        return
+      }
+
+      sharedRoomReady.current = true
+      lastRemoteState.current = JSON.stringify(sharedMeeting)
+      setMeeting(sharedMeeting)
+    }, (error) => {
+      console.error('Ortak toplantı odasına bağlanılamadı.', error)
+    })
+
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    const serializedMeeting = JSON.stringify(meeting)
+    localStorage.setItem(storageKey, serializedMeeting)
+
+    if (!realtimeDatabase || !sharedRoomReady.current) return
+    if (lastRemoteState.current === serializedMeeting) {
+      lastRemoteState.current = null
+      return
+    }
+
+    lastRemoteState.current = serializedMeeting
+    void set(ref(realtimeDatabase, sharedRoomPath), meeting).catch((error: unknown) => {
+      lastRemoteState.current = null
+      console.error('Ortak toplantı değişikliği kaydedilemedi.', error)
+    })
   }, [meeting])
 
   function resetMeeting() {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DndContext, DragOverlay, useDraggable, useDroppable, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
+import { CircleDot, RotateCcw } from 'lucide-react'
 import './App.css'
 
 type Participant = { id: string; name: string; spoken: boolean; absent: boolean; fixed: boolean }
@@ -97,6 +98,16 @@ function App() {
     localStorage.setItem(storageKey, JSON.stringify(meeting))
   }, [meeting])
 
+  function resetMeeting() {
+    setMeeting((current) => ({
+      ...current,
+      participants: current.participants.map((person) => ({ ...person, spoken: false, absent: false })),
+      currentSpeakerId: null,
+      elapsedSeconds: 0,
+      isRunning: false,
+    }))
+  }
+
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id))
   }
@@ -116,6 +127,15 @@ function App() {
 
   return (
     <main className="tracker-screen">
+      <header className="tracker-header">
+        <div className="tracker-logo" aria-label="DailyTracker">
+          <span className="tracker-logo-mark"><CircleDot size={19} strokeWidth={2.4} /></span>
+          <span>DailyTracker</span>
+        </div>
+        <button className="tracker-reset" type="button" onClick={resetMeeting}>
+          <RotateCcw size={16} /> Sıfırla
+        </button>
+      </header>
       <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveId(null)}>
         <div className="participant-board">
           <ParticipantLane id="unspoken" title="Konuşmayanlar" people={unspokenPeople} />

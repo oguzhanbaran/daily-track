@@ -1,6 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { DndContext, DragOverlay, useDraggable, useDroppable, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
-import { CircleDot, Eye, EyeOff, LockKeyhole } from 'lucide-react'
 import './App.css'
 
 type Participant = { id: string; name: string; spoken: boolean; absent: boolean; fixed: boolean }
@@ -88,27 +87,11 @@ function ParticipantLane({ id, title, people }: { id: 'unspoken' | 'spoken'; tit
 
 function App() {
   const [meeting, setMeeting] = useState(loadMeeting)
-  const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('daily-track-auth') === 'true')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [loginError, setLoginError] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
   const participants = meeting.participants.filter((person) => !person.absent)
   const unspokenPeople = participants.filter((person) => !person.spoken)
   const spokenPeople = participants.filter((person) => person.spoken)
   const activePerson = participants.find((person) => person.id === activeId)
-
-  function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (username.trim() === 'ogilet' && password === 'ogi123') {
-      sessionStorage.setItem('daily-track-auth', 'true')
-      setIsAuthenticated(true)
-      setLoginError('')
-      return
-    }
-    setLoginError('Kullanıcı adı veya şifre hatalı.')
-  }
 
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(meeting))
@@ -129,39 +112,6 @@ function App() {
       }))
     }
     setActiveId(null)
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <main className="login-screen">
-        <section className="login-card" aria-labelledby="login-heading">
-          <a className="brand login-brand" href="#login" aria-label="Günlük akışı">
-            <span className="brand-mark"><CircleDot size={19} strokeWidth={2.4} /></span>
-            <span>günlük<span className="brand-light">akışı</span></span>
-          </a>
-          <p className="eyebrow">GÜNLÜK TOPLANTIM</p>
-          <h1 className="login-title" id="login-heading">Giriş yap</h1>
-          <p className="login-copy">Konuşma sırası takibine devam et.</p>
-          <form className="login-form" onSubmit={handleLogin}>
-            <div className="login-field">
-              <label htmlFor="login-username">Kullanıcı adı</label>
-              <input id="login-username" name="username" type="text" autoComplete="username" autoFocus required value={username} onChange={(event) => setUsername(event.target.value)} />
-            </div>
-            <div className="login-field">
-              <label htmlFor="login-password">Şifre</label>
-              <div className="login-password-wrap">
-                <input id="login-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
-                <button className="password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'} title={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}>
-                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-                </button>
-              </div>
-            </div>
-            {loginError && <p className="login-error" role="alert">{loginError}</p>}
-            <button className="login-submit" type="submit"><LockKeyhole size={17} /> Giriş yap</button>
-          </form>
-        </section>
-      </main>
-    )
   }
 
   return (
